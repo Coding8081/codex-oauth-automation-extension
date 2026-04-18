@@ -3896,6 +3896,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
     }
 
+    case 'SECURITY_BLOCKED_ALERT': {
+      openConfirmModal({
+        title: message.payload?.title || '流程已完全停止',
+        message: message.payload?.message || '检测到安全风控，当前流程已完全停止。',
+        alert: message.payload?.alert || { text: '检测到 Cloudflare 风控，请暂停当前操作。', tone: 'danger' },
+        confirmLabel: '我知道了',
+        confirmVariant: 'btn-danger',
+      }).catch(() => {});
+      break;
+    }
+
     case 'LOG_ENTRY':
       appendLog(message.payload);
       if (message.payload.level === 'error') {

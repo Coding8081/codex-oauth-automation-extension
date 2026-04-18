@@ -41,6 +41,7 @@
       handleAutoRunLoopUnhandledError,
       importSettingsBundle,
       invalidateDownstreamAfterStepRestart,
+      isCloudflareSecurityBlockedError,
       isAutoRunLockedState,
       isHotmailProvider,
       isLocalhostOAuthCallbackUrl,
@@ -57,6 +58,7 @@
       patchHotmailAccount,
       registerTab,
       requestStop,
+      handleCloudflareSecurityBlocked,
       resetState,
       resumeAutoRun,
       scheduleAutoRun,
@@ -226,6 +228,13 @@
               await finalizeStep3Completion(message.payload || {});
             }
           } catch (error) {
+            if (typeof isCloudflareSecurityBlockedError === 'function' && isCloudflareSecurityBlockedError(error)) {
+              const userMessage = typeof handleCloudflareSecurityBlocked === 'function'
+                ? await handleCloudflareSecurityBlocked(error)
+                : (error?.message || String(error || ''));
+              notifyStepError(message.step, '流程已被用户停止。');
+              return { ok: true, error: userMessage };
+            }
             const errorMessage = error?.message || String(error || '步骤 3 提交后确认失败');
             await setStepStatus(message.step, 'failed');
             await addLog(`步骤 ${message.step} 失败：${errorMessage}`, 'error');
@@ -246,6 +255,13 @@
         }
 
         case 'STEP_ERROR': {
+          if (typeof isCloudflareSecurityBlockedError === 'function' && isCloudflareSecurityBlockedError(message.error)) {
+            const userMessage = typeof handleCloudflareSecurityBlocked === 'function'
+              ? await handleCloudflareSecurityBlocked(message.error)
+              : (typeof message.error === 'string' ? message.error : String(message.error || ''));
+            notifyStepError(message.step, '流程已被用户停止。');
+            return { ok: true, error: userMessage };
+          }
           if (isStopError(message.error)) {
             await setStepStatus(message.step, 'stopped');
             await addLog(`步骤 ${message.step} 已被用户停止`, 'warn');

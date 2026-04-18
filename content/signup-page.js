@@ -936,8 +936,10 @@ function getAuthTimeoutErrorPageState(options = {}) {
   const titleMatched = AUTH_TIMEOUT_ERROR_TITLE_PATTERN.test(text)
     || AUTH_TIMEOUT_ERROR_TITLE_PATTERN.test(document.title || '');
   const detailMatched = AUTH_TIMEOUT_ERROR_DETAIL_PATTERN.test(text);
+  const maxCheckAttemptsBlocked = /max_check_attempts/i.test(text);
+  const operationTimedOutBlocked = /operation\s+timed\s+out/i.test(text);
 
-  if (!titleMatched && !detailMatched) {
+  if (!titleMatched && !detailMatched && !maxCheckAttemptsBlocked && !operationTimedOutBlocked) {
     return null;
   }
 
@@ -948,6 +950,8 @@ function getAuthTimeoutErrorPageState(options = {}) {
     retryEnabled: isActionEnabled(retryButton),
     titleMatched,
     detailMatched,
+    maxCheckAttemptsBlocked,
+    operationTimedOutBlocked,
   };
 }
 
@@ -1000,6 +1004,13 @@ async function recoverCurrentAuthRetryPage(payload = {}) {
       };
     }
 
+    if (retryState.maxCheckAttemptsBlocked) {
+      throw new Error('CF_SECURITY_BLOCKED::您已触发Cloudflare 安全防护系统，已完全停止流程，请不要短时间内多次进行重新发送验证码，连续刷新、反复点击重试会加重风控；请先关闭页面等待 15-30 分钟，让系统的临时限制自动解除。或者更换浏览器');
+    }
+
+    if (retryState.operationTimedOutBlocked) {
+      throw new Error('NETWORK_TIMEOUT_BLOCKED::请检查当前网络节点是否稳定，若你使用的代理 / /VPN 节点无延迟过高问题，请换一个服务器继续使用此邮箱继续登陆');
+    }
     if (retryState.retryButton && retryState.retryEnabled) {
       clickCount += 1;
       log(`${logLabel || `步骤 ${step || '?'}：检测到重试页，正在点击“重试”恢复`}（第 ${clickCount} 次）...`, 'warn');
@@ -1087,6 +1098,8 @@ function inspectLoginAuthState() {
     retryEnabled: Boolean(retryState?.retryEnabled),
     titleMatched: Boolean(retryState?.titleMatched),
     detailMatched: Boolean(retryState?.detailMatched),
+    maxCheckAttemptsBlocked: Boolean(retryState?.maxCheckAttemptsBlocked),
+    operationTimedOutBlocked: Boolean(retryState?.operationTimedOutBlocked),
     verificationTarget,
     passwordInput,
     emailInput,
@@ -1152,6 +1165,8 @@ function serializeLoginAuthState(snapshot) {
     retryEnabled: Boolean(snapshot?.retryEnabled),
     titleMatched: Boolean(snapshot?.titleMatched),
     detailMatched: Boolean(snapshot?.detailMatched),
+    maxCheckAttemptsBlocked: Boolean(snapshot?.maxCheckAttemptsBlocked),
+    operationTimedOutBlocked: Boolean(snapshot?.operationTimedOutBlocked),
     hasVerificationTarget: Boolean(snapshot?.verificationTarget),
     hasPasswordInput: Boolean(snapshot?.passwordInput),
     hasEmailInput: Boolean(snapshot?.emailInput),
@@ -1243,7 +1258,27 @@ function createStep6RecoverableResult(reason, snapshot, options = {}) {
 }
 
 async function createStep6LoginTimeoutRecoverableResult(reason, snapshot, message) {
-  return createStep6RecoverableResult(reason, normalizeStep6Snapshot(snapshot || inspectLoginAuthState()), {
+  const resolvedSnapshot = normalizeStep6Snapshot(snapshot || inspectLoginAuthState());
+  if (resolvedSnapshot?.state === 'login_timeout_error_page') {
+    try {
+      const recoveryResult = await recoverCurrentAuthRetryPage({
+        flow: 'login',
+        logLabel: '步骤 7：检测到登录超时报错，正在点击“重试”恢复当前页面',
+        step: 7,
+        timeoutMs: 12000,
+      });
+      if (recoveryResult?.recovered) {
+        log('步骤 7：登录超时报错页已点击“重试”，准备重新执行当前步骤。', 'warn');
+      }
+    } catch (error) {
+      if (/(?:CF_SECURITY_BLOCKED|NETWORK_TIMEOUT_BLOCKED)::/i.test(String(error?.message || error || ''))) {
+        throw error;
+      }
+      log(`步骤 7：登录超时报错页自动点击“重试”失败：${error.message}`, 'warn');
+    }
+  }
+
+  return createStep6RecoverableResult(reason, resolvedSnapshot, {
     message,
   });
 }
@@ -1949,6 +1984,8 @@ function getStep8State() {
     retryEnabled: Boolean(retryState?.retryEnabled),
     retryTitleMatched: Boolean(retryState?.titleMatched),
     retryDetailMatched: Boolean(retryState?.detailMatched),
+    maxCheckAttemptsBlocked: Boolean(retryState?.maxCheckAttemptsBlocked),
+    operationTimedOutBlocked: Boolean(retryState?.operationTimedOutBlocked),
     buttonFound: Boolean(continueBtn),
     buttonEnabled: isButtonEnabled(continueBtn),
     buttonText: continueBtn ? getActionText(continueBtn) : '',
