@@ -57,6 +57,8 @@ test('sidepanel html exposes custom email pool generator option and input row', 
   assert.match(html, /option value="custom-pool">自定义邮箱池<\/option>/);
   assert.match(html, /id="row-custom-email-pool"/);
   assert.match(html, /id="input-custom-email-pool"/);
+  assert.match(html, /id="row-custom-mail-provider-pool"/);
+  assert.match(html, /id="input-custom-mail-provider-pool"/);
 });
 
 test('sidepanel locks run count to custom email pool size', () => {
@@ -66,6 +68,9 @@ test('sidepanel locks run count to custom email pool size', () => {
     extractFunction('getSelectedEmailGenerator'),
     extractFunction('usesGeneratedAliasMailProvider'),
     extractFunction('usesCustomEmailPoolGenerator'),
+    extractFunction('getCustomMailProviderPoolSize'),
+    extractFunction('usesCustomMailProviderPool'),
+    extractFunction('getLockedRunCountFromEmailPool'),
     extractFunction('getCustomEmailPoolSize'),
     extractFunction('getRunCountValue'),
   ].join('\n');
@@ -112,4 +117,60 @@ return {
   assert.equal(api.usesCustomEmailPoolGenerator(), true);
   assert.equal(api.getCustomEmailPoolSize(), 2);
   assert.equal(api.getRunCountValue(), 2);
+});
+
+test('sidepanel locks run count to custom mail provider pool size', () => {
+  const bundle = [
+    extractFunction('isCustomMailProvider'),
+    extractFunction('normalizeCustomEmailPoolEntries'),
+    extractFunction('getSelectedEmailGenerator'),
+    extractFunction('usesGeneratedAliasMailProvider'),
+    extractFunction('usesCustomEmailPoolGenerator'),
+    extractFunction('getCustomMailProviderPoolSize'),
+    extractFunction('usesCustomMailProviderPool'),
+    extractFunction('getLockedRunCountFromEmailPool'),
+    extractFunction('getCustomEmailPoolSize'),
+    extractFunction('getRunCountValue'),
+  ].join('\n');
+
+  const api = new Function(`
+const GMAIL_PROVIDER = 'gmail';
+const GMAIL_ALIAS_GENERATOR = 'gmail-alias';
+const CUSTOM_EMAIL_POOL_GENERATOR = 'custom-pool';
+const selectMailProvider = { value: 'custom' };
+const selectEmailGenerator = { value: 'duck' };
+const inputCustomMailProviderPool = { value: 'first@example.com\\nsecond@example.com\\nthird@example.com' };
+const inputCustomEmailPool = { value: '' };
+const inputRunCount = { value: '99' };
+
+function isLuckmailProvider() {
+  return false;
+}
+
+function isManagedAliasProvider() {
+  return false;
+}
+
+function getSelectedMail2925Mode() {
+  return 'provide';
+}
+
+function isManagedAliasProvider(provider) {
+  return String(provider || '').trim().toLowerCase() === GMAIL_PROVIDER;
+}
+
+${bundle}
+
+return {
+  usesCustomMailProviderPool,
+  getCustomMailProviderPoolSize,
+  getLockedRunCountFromEmailPool,
+  getRunCountValue,
+};
+`)();
+
+  assert.equal(api.usesCustomMailProviderPool(), true);
+  assert.equal(api.getCustomMailProviderPoolSize(), 3);
+  assert.equal(api.getLockedRunCountFromEmailPool(), 3);
+  assert.equal(api.getRunCountValue(), 3);
 });

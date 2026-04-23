@@ -268,6 +268,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   mail2925Mode: DEFAULT_MAIL_2925_MODE,
   mail2925UseAccountPool: false,
   emailGenerator: 'duck',
+  customMailProviderPool: [],
   customEmailPool: [],
   autoDeleteUsedIcloudAlias: false,
   icloudHostPreference: 'auto',
@@ -703,6 +704,16 @@ function getCustomEmailPoolEmailForRun(state = {}, targetRun = 1) {
   return entries[numericRun - 1] || '';
 }
 
+function getCustomMailProviderPool(state = {}) {
+  return normalizeCustomEmailPool(state?.customMailProviderPool);
+}
+
+function getCustomMailProviderPoolEmailForRun(state = {}, targetRun = 1) {
+  const entries = getCustomMailProviderPool(state);
+  const numericRun = Math.max(1, Math.floor(Number(targetRun) || 1));
+  return entries[numericRun - 1] || '';
+}
+
 function normalizePanelMode(value = '') {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'sub2api') {
@@ -958,6 +969,7 @@ function normalizePersistentSettingValue(key, value) {
       return Boolean(value);
     case 'emailGenerator':
       return normalizeEmailGenerator(value);
+    case 'customMailProviderPool':
     case 'customEmailPool':
       return normalizeCustomEmailPool(value);
     case 'autoDeleteUsedIcloudAlias':
@@ -5905,6 +5917,19 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
     return currentState.email;
   }
 
+  if (isCustomMailProvider(currentState)) {
+    const poolSize = getCustomMailProviderPool(currentState).length;
+    if (poolSize > 0) {
+      const queuedEmail = getCustomMailProviderPoolEmailForRun(currentState, targetRun);
+      if (!queuedEmail) {
+        throw new Error(`自定义邮箱号池第 ${targetRun} 个邮箱不存在，请检查号池数量是否与自动轮数一致。`);
+      }
+      await setEmailState(queuedEmail);
+      await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：自定义邮箱号池已就绪：${queuedEmail}（第 ${attemptRuns} 次尝试；第 4/8 步仍需手动输入验证码）===`, 'ok');
+      return queuedEmail;
+    }
+  }
+
   if (isCustomEmailPoolGenerator(currentState)) {
     const queuedEmail = getCustomEmailPoolEmailForRun(currentState, targetRun);
     if (!queuedEmail) {
@@ -6036,6 +6061,19 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
 
   if (currentState.email) {
     return currentState.email;
+  }
+
+  if (isCustomMailProvider(currentState)) {
+    const poolSize = getCustomMailProviderPool(currentState).length;
+    if (poolSize > 0) {
+      const queuedEmail = getCustomMailProviderPoolEmailForRun(currentState, targetRun);
+      if (!queuedEmail) {
+        throw new Error(`自定义邮箱号池第 ${targetRun} 个邮箱不存在，请检查号池数量是否与自动轮数一致。`);
+      }
+      await setEmailState(queuedEmail);
+      await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮：自定义邮箱号池已就绪：${queuedEmail}（第 ${attemptRuns} 次尝试；第 4/8 步仍需手动输入验证码）===`, 'ok');
+      return queuedEmail;
+    }
   }
 
   if (isCustomEmailPoolGenerator(currentState)) {
