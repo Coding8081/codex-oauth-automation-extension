@@ -98,6 +98,11 @@ const rowCodex2ApiUrl = document.getElementById('row-codex2api-url');
 const inputCodex2ApiUrl = document.getElementById('input-codex2api-url');
 const rowCodex2ApiAdminKey = document.getElementById('row-codex2api-admin-key');
 const inputCodex2ApiAdminKey = document.getElementById('input-codex2api-admin-key');
+const inputGrok2ApiEndpoint = document.getElementById('input-grok2api-endpoint');
+const inputGrok2ApiToken = document.getElementById('input-grok2api-token');
+const inputGrokTempMailApi = document.getElementById('input-grok-temp-mail-api');
+const inputGrokTempMailPassword = document.getElementById('input-grok-temp-mail-password');
+const inputGrokTempMailDomain = document.getElementById('input-grok-temp-mail-domain');
 const rowCustomPassword = document.getElementById('row-custom-password');
 const selectMailProvider = document.getElementById('select-mail-provider');
 const btnMailLogin = document.getElementById('btn-mail-login');
@@ -238,9 +243,25 @@ const btnAutoStartRestart = document.getElementById('btn-auto-start-restart');
 const btnAutoStartContinue = document.getElementById('btn-auto-start-continue');
 const autoHintText = document.querySelector('.auto-hint');
 const stepDefinitions = (window.MultiPageStepDefinitions?.getSteps?.() || []).sort((left, right) => left.order - right.order);
+const grokStepDefinitions = (window.MultiPageGrokStepDefinitions?.getSteps?.() || []).sort((left, right) => left.order - right.order);
+
+function getActiveStepDefinitions() {
+  return selectPanelMode.value === 'grok' ? grokStepDefinitions : stepDefinitions;
+}
+function getActiveStepIds() {
+  return getActiveStepDefinitions().map((step) => Number(step.id)).filter(Number.isFinite);
+}
+
 const STEP_IDS = stepDefinitions.map((step) => Number(step.id)).filter(Number.isFinite);
 const STEP_DEFAULT_STATUSES = Object.fromEntries(STEP_IDS.map((stepId) => [stepId, 'pending']));
 const SKIPPABLE_STEPS = new Set(STEP_IDS);
+
+function getActiveStepDefaultStatuses() {
+  return Object.fromEntries(getActiveStepIds().map((stepId) => [stepId, 'pending']));
+}
+function getActiveSkippableSteps() {
+  return new Set(getActiveStepIds());
+}
 const stepsList = document.querySelector('.steps-list');
 const AUTO_DELAY_MIN_MINUTES = 1;
 const AUTO_DELAY_MAX_MINUTES = 1440;
@@ -1081,12 +1102,12 @@ function isDoneStatus(status) {
 }
 
 function getStepStatuses(state = latestState) {
-  return { ...STEP_DEFAULT_STATUSES, ...(state?.stepStatuses || {}) };
+  return { ...getActiveStepDefaultStatuses(), ...(state?.stepStatuses || {}) };
 }
 
 function getFirstUnfinishedStep(state = latestState) {
   const statuses = getStepStatuses(state);
-  for (const step of STEP_IDS) {
+  for (const step of getActiveStepIds()) {
     if (!isDoneStatus(statuses[step])) {
       return step;
     }
@@ -1119,7 +1140,7 @@ function shouldOfferAutoModeChoice(state = latestState) {
 
 function syncLatestState(nextState) {
   const mergedStepStatuses = nextState?.stepStatuses
-    ? { ...STEP_DEFAULT_STATUSES, ...(latestState?.stepStatuses || {}), ...nextState.stepStatuses }
+    ? { ...getActiveStepDefaultStatuses(), ...(latestState?.stepStatuses || {}), ...nextState.stepStatuses }
     : getStepStatuses(latestState);
 
   latestState = {
@@ -1647,6 +1668,11 @@ function collectSettingsPayload() {
   const mail2925UseAccountPool = typeof inputMail2925UseAccountPool !== 'undefined'
     ? Boolean(inputMail2925UseAccountPool?.checked)
     : Boolean(latestState?.mail2925UseAccountPool);
+  const getOptionalInputValue = (id) => (
+    typeof document !== 'undefined'
+      ? document.getElementById(id)?.value || ''
+      : ''
+  );
   return {
     panelMode: selectPanelMode.value,
     vpsUrl: inputVpsUrl.value.trim(),
@@ -1707,6 +1733,12 @@ function collectSettingsPayload() {
       inputVerificationResendCount?.value,
       DEFAULT_VERIFICATION_RESEND_COUNT
     ),
+    grok2apiEndpoint: getOptionalInputValue('input-grok2api-endpoint').trim(),
+    grok2apiToken: getOptionalInputValue('input-grok2api-token'),
+    grokTempMailApi: getOptionalInputValue('input-grok-temp-mail-api').trim(),
+    grokTempMailPassword: getOptionalInputValue('input-grok-temp-mail-password'),
+    grokTempMailDomain: getOptionalInputValue('input-grok-temp-mail-domain').trim(),
+    grok2apiAppend: true,
   };
 }
 
@@ -2014,8 +2046,9 @@ function initializeManualStepActions() {
 
 function renderStepsList() {
   if (!stepsList) return;
+  const activeSteps = getActiveStepDefinitions();
 
-  stepsList.innerHTML = stepDefinitions.map((step) => `
+  stepsList.innerHTML = activeSteps.map((step) => `
     <div class="step-row" data-step="${step.id}" data-step-key="${escapeHtml(step.key)}">
       <div class="step-indicator" data-step="${step.id}"><span class="step-num">${step.id}</span></div>
       <button class="step-btn" data-step="${step.id}" data-step-key="${escapeHtml(step.key)}">${escapeHtml(step.title)}</button>
@@ -2024,7 +2057,7 @@ function renderStepsList() {
   `).join('');
 
   if (stepsProgress) {
-    stepsProgress.textContent = `0 / ${STEP_IDS.length}`;
+    stepsProgress.textContent = `0 / ${activeSteps.length}`;
   }
 }
 
@@ -2049,6 +2082,11 @@ function applySettingsState(state) {
   inputSub2ApiDefaultProxy.value = state?.sub2apiDefaultProxyName || '';
   inputCodex2ApiUrl.value = state?.codex2apiUrl || '';
   inputCodex2ApiAdminKey.value = state?.codex2apiAdminKey || '';
+  if (inputGrok2ApiEndpoint) inputGrok2ApiEndpoint.value = state?.grok2apiEndpoint || '';
+  if (inputGrok2ApiToken) inputGrok2ApiToken.value = state?.grok2apiToken || '';
+  if (inputGrokTempMailApi) inputGrokTempMailApi.value = state?.grokTempMailApi || '';
+  if (inputGrokTempMailPassword) inputGrokTempMailPassword.value = state?.grokTempMailPassword || '';
+  if (inputGrokTempMailDomain) inputGrokTempMailDomain.value = state?.grokTempMailDomain || '';
   const restoredMailProvider = isCustomMailProvider(state?.mailProvider)
     || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', '163', '163-vip', 'qq', 'inbucket', '2925', 'cloudflare-temp-email'].includes(String(state?.mailProvider || '').trim())
     ? String(state?.mailProvider || '163').trim()
@@ -3290,9 +3328,12 @@ async function saveCloudflareTempEmailDomainSettings(domains, activeDomain, opti
 }
 
 function updatePanelModeUI() {
-  const useSub2Api = selectPanelMode.value === 'sub2api';
-  const useCodex2Api = selectPanelMode.value === 'codex2api';
-  const useCpa = !useSub2Api && !useCodex2Api;
+  const mode = selectPanelMode.value;
+  const useSub2Api = mode === 'sub2api';
+  const useCodex2Api = mode === 'codex2api';
+  const useGrok = mode === 'grok';
+  const useCpa = !useSub2Api && !useCodex2Api && !useGrok;
+
   rowVpsUrl.style.display = useCpa ? '' : 'none';
   rowVpsPassword.style.display = useCpa ? '' : 'none';
   rowLocalCpaStep9Mode.style.display = useCpa ? '' : 'none';
@@ -3303,6 +3344,21 @@ function updatePanelModeUI() {
   rowSub2ApiDefaultProxy.style.display = useSub2Api ? '' : 'none';
   rowCodex2ApiUrl.style.display = useCodex2Api ? '' : 'none';
   rowCodex2ApiAdminKey.style.display = useCodex2Api ? '' : 'none';
+
+  const rowGrok2ApiEndpoint = document.getElementById('row-grok2api-endpoint');
+  const rowGrok2ApiToken = document.getElementById('row-grok2api-token');
+  const rowGrokTempMailApi = document.getElementById('row-grok-temp-mail-api');
+  const rowGrokTempMailPassword = document.getElementById('row-grok-temp-mail-password');
+  const rowGrokTempMailDomain = document.getElementById('row-grok-temp-mail-domain');
+
+  if (rowGrok2ApiEndpoint) rowGrok2ApiEndpoint.style.display = useGrok ? '' : 'none';
+  if (rowGrok2ApiToken) rowGrok2ApiToken.style.display = useGrok ? '' : 'none';
+  if (rowGrokTempMailApi) rowGrokTempMailApi.style.display = useGrok ? '' : 'none';
+  if (rowGrokTempMailPassword) rowGrokTempMailPassword.style.display = useGrok ? '' : 'none';
+  if (rowGrokTempMailDomain) rowGrokTempMailDomain.style.display = useGrok ? '' : 'none';
+
+  // Re-render steps list for the new mode
+  renderStepsList();
 
   const step9Btn = document.querySelector('.step-btn[data-step-key="platform-verify"]');
   if (step9Btn) {
@@ -3339,7 +3395,8 @@ function updateStepUI(step, status) {
 
 function updateProgressCounter() {
   const completed = Object.values(getStepStatuses()).filter(isDoneStatus).length;
-  stepsProgress.textContent = `${completed} / ${STEP_IDS.length}`;
+  const activeIds = getActiveStepIds();
+  stepsProgress.textContent = `${completed} / ${activeIds.length}`;
 }
 
 function updateButtonStates() {
@@ -3348,7 +3405,7 @@ function updateButtonStates() {
   const autoLocked = isAutoRunLockedPhase();
   const autoScheduled = isAutoRunScheduledPhase();
 
-  for (const step of STEP_IDS) {
+  for (const step of getActiveStepIds()) {
     const btn = document.querySelector(`.step-btn[data-step="${step}"]`);
     if (!btn) continue;
 
@@ -3357,8 +3414,9 @@ function updateButtonStates() {
     } else if (step === 1) {
       btn.disabled = false;
     } else {
-    const currentIndex = STEP_IDS.indexOf(step);
-    const prevStep = currentIndex > 0 ? STEP_IDS[currentIndex - 1] : null;
+    const activeIds = getActiveStepIds();
+    const currentIndex = activeIds.indexOf(step);
+    const prevStep = currentIndex > 0 ? activeIds[currentIndex - 1] : null;
     const prevStatus = prevStep === null ? 'completed' : statuses[prevStep];
     const currentStatus = statuses[step];
     btn.disabled = !(isDoneStatus(prevStatus) || currentStatus === 'failed' || isDoneStatus(currentStatus) || currentStatus === 'stopped');
@@ -3368,11 +3426,11 @@ function updateButtonStates() {
   document.querySelectorAll('.step-manual-btn').forEach((btn) => {
     const step = Number(btn.dataset.step);
     const currentStatus = statuses[step];
-    const currentIndex = STEP_IDS.indexOf(step);
-    const prevStep = currentIndex > 0 ? STEP_IDS[currentIndex - 1] : null;
+    const currentIndex = getActiveStepIds().indexOf(step);
+    const prevStep = currentIndex > 0 ? getActiveStepIds()[currentIndex - 1] : null;
     const prevStatus = prevStep === null ? 'completed' : statuses[prevStep];
 
-    if (!SKIPPABLE_STEPS.has(step) || anyRunning || autoLocked || autoScheduled || currentStatus === 'running' || isDoneStatus(currentStatus)) {
+    if (!getActiveSkippableSteps().has(step) || anyRunning || autoLocked || autoScheduled || currentStatus === 'running' || isDoneStatus(currentStatus)) {
       btn.style.display = 'none';
       btn.disabled = true;
       btn.title = '当前不可跳过';
@@ -3479,7 +3537,7 @@ function updateStatusDisplay(state) {
     .map(([k]) => Number(k))
     .sort((a, b) => b - a)[0];
 
-  if (lastCompleted === STEP_IDS[STEP_IDS.length - 1]) {
+  if (lastCompleted === getActiveStepIds()[getActiveStepIds().length - 1]) {
     displayStatus.textContent = (state.stepStatuses[lastCompleted] === 'manual_completed' || state.stepStatuses[lastCompleted] === 'skipped') ? '全部步骤已跳过/完成' : '全部步骤已完成';
     statusBar.classList.add('completed');
   } else if (lastCompleted) {
@@ -4069,7 +4127,8 @@ stepsList?.addEventListener('click', async (event) => {
     if (!(await maybeTakeoverAutoRun(`执行步骤 ${step}`))) {
       return;
     }
-    if (step === 3) {
+    const isGrokMode = selectPanelMode.value === 'grok';
+    if (step === 3 && !isGrokMode) {
       if (inputPassword.value !== (latestState?.customPassword || '')) {
         await chrome.runtime.sendMessage({
           type: 'SAVE_SETTING',
@@ -4420,7 +4479,7 @@ btnReset.addEventListener('click', async () => {
 
   await chrome.runtime.sendMessage({ type: 'RESET', source: 'sidepanel' });
   syncLatestState({
-    stepStatuses: STEP_DEFAULT_STATUSES,
+    stepStatuses: getActiveStepDefaultStatuses(),
     currentHotmailAccountId: null,
     currentLuckmailPurchase: null,
     currentLuckmailMailCursor: null,
@@ -4753,6 +4812,22 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
+[
+  inputGrok2ApiEndpoint,
+  inputGrok2ApiToken,
+  inputGrokTempMailApi,
+  inputGrokTempMailPassword,
+  inputGrokTempMailDomain,
+].forEach((input) => {
+  input?.addEventListener('input', () => {
+    markSettingsDirty(true);
+    scheduleSettingsAutoSave();
+  });
+  input?.addEventListener('blur', () => {
+    saveSettings({ silent: true }).catch(() => { });
+  });
+});
+
 inputEmailPrefix.addEventListener('input', () => {
   maybeClearGeneratedAliasAfterEmailPrefixChange().catch(() => { });
   syncManagedAliasBaseEmailDraftFromInput();
@@ -5043,7 +5118,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         localhostUrl: null,
         email: null,
         password: null,
-        stepStatuses: STEP_DEFAULT_STATUSES,
+        stepStatuses: getActiveStepDefaultStatuses(),
         logs: [],
         scheduledAutoRunAt: null,
         autoRunCountdownAt: null,

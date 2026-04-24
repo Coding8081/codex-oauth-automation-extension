@@ -102,6 +102,17 @@
         "content/duck-mail.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://accounts.x.ai/*"
+      ],
+      "js": [
+        "content/activation-utils.js",
+        "content/utils.js",
+        "content/grok-signup-page.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "action": {
