@@ -28,6 +28,14 @@ importScripts(
   'background/steps/confirm-oauth.js',
   'background/steps/platform-verify.js',
   'data/names.js',
+  'data/grok-step-definitions.js',
+  'background/grok-temp-mail.js',
+  'background/steps/grok-open-signup.js',
+  'background/steps/grok-submit-email.js',
+  'background/steps/grok-verify-code.js',
+  'background/steps/grok-fill-profile.js',
+  'background/steps/grok-extract-sso.js',
+  'background/steps/grok-push-to-api.js',
   'hotmail-utils.js',
   'microsoft-email.js',
   'luckmail-utils.js',
@@ -37,12 +45,30 @@ importScripts(
 );
 
 const SHARED_STEP_DEFINITIONS = self.MultiPageStepDefinitions?.getSteps?.() || [];
-const STEP_IDS = SHARED_STEP_DEFINITIONS
+const GROK_STEP_DEFINITIONS = self.MultiPageGrokStepDefinitions?.getSteps?.() || [];
+const OPENAI_STEP_IDS = SHARED_STEP_DEFINITIONS
   .map((definition) => Number(definition?.id))
   .filter(Number.isFinite)
   .sort((left, right) => left - right);
-const LAST_STEP_ID = STEP_IDS[STEP_IDS.length - 1] || 10;
+const GROK_STEP_IDS = GROK_STEP_DEFINITIONS
+  .map((definition) => Number(definition?.id))
+  .filter(Number.isFinite)
+  .sort((left, right) => left - right);
+const OPENAI_LAST_STEP_ID = OPENAI_STEP_IDS[OPENAI_STEP_IDS.length - 1] || 10;
+const GROK_LAST_STEP_ID = GROK_STEP_IDS[GROK_STEP_IDS.length - 1] || 6;
+const STEP_IDS = OPENAI_STEP_IDS;
+const LAST_STEP_ID = OPENAI_LAST_STEP_ID;
 const FINAL_OAUTH_CHAIN_START_STEP = 7;
+
+function getActiveStepIds(panelMode) {
+  return panelMode === 'grok' ? GROK_STEP_IDS : OPENAI_STEP_IDS;
+}
+function getActiveLastStepId(panelMode) {
+  return panelMode === 'grok' ? GROK_LAST_STEP_ID : OPENAI_LAST_STEP_ID;
+}
+function getActiveStepDefinitions(panelMode) {
+  return panelMode === 'grok' ? GROK_STEP_DEFINITIONS : SHARED_STEP_DEFINITIONS;
+}
 
 const {
   extractVerificationCodeFromMessage,
@@ -292,6 +318,12 @@ const PERSISTED_SETTING_DEFAULTS = {
   cloudflareTempEmailUseRandomSubdomain: false,
   cloudflareTempEmailDomain: '',
   cloudflareTempEmailDomains: [],
+  grok2apiEndpoint: '',
+  grok2apiToken: '',
+  grokTempMailApi: '',
+  grokTempMailPassword: '',
+  grokTempMailDomain: '',
+  grok2apiAppend: true,
   hotmailAccounts: [],
   mail2925Accounts: [],
 };
@@ -721,6 +753,9 @@ function normalizePanelMode(value = '') {
   }
   if (normalized === 'codex2api') {
     return 'codex2api';
+  }
+  if (normalized === 'grok') {
+    return 'grok';
   }
   return 'cpa';
 }
@@ -3749,6 +3784,9 @@ function getPanelMode(state = {}) {
   if (state.panelMode === 'codex2api') {
     return 'codex2api';
   }
+  if (state.panelMode === 'grok') {
+    return 'grok';
+  }
   return 'cpa';
 }
 
@@ -3762,6 +3800,9 @@ function getPanelModeLabel(modeOrState) {
   }
   if (mode === 'codex2api') {
     return 'Codex2API';
+  }
+  if (mode === 'grok') {
+    return 'Grok';
   }
   return 'CPA';
 }
@@ -4322,8 +4363,9 @@ async function invalidateDownstreamAfterStepRestart(step, options = {}) {
   const state = await getState();
   const statuses = { ...(state.stepStatuses || {}) };
   const changedSteps = [];
+  const activeLastStep = getActiveLastStepId(state.panelMode || 'cpa');
 
-  for (let downstream = step + 1; downstream <= LAST_STEP_ID; downstream++) {
+  for (let downstream = step + 1; downstream <= activeLastStep; downstream++) {
     if (statuses[downstream] !== 'pending') {
       statuses[downstream] = 'pending';
       changedSteps.push(downstream);
@@ -5155,8 +5197,10 @@ async function handleStepData(step, payload) {
 const stepWaiters = new Map();
 let resumeWaiter = null;
 const AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS = 120000;
-const AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 4, 6, 7, 8, 9]);
-const STEP_COMPLETION_SIGNAL_STEPS = new Set([3, 5, 10]);
+const OPENAI_AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 4, 6, 7, 8, 9]);
+const OPENAI_STEP_COMPLETION_SIGNAL_STEPS = new Set([3, 5, 10]);
+const GROK_AUTO_RUN_BACKGROUND_COMPLETED_STEPS = new Set([1, 2, 3, 4, 5, 6]);
+const GROK_STEP_COMPLETION_SIGNAL_STEPS = new Set([]);
 
 function waitForStepComplete(step, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -5178,8 +5222,17 @@ function waitForStepComplete(step, timeoutMs = 120000) {
   });
 }
 
-function doesStepUseCompletionSignal(step) {
-  return STEP_COMPLETION_SIGNAL_STEPS.has(step);
+function getActiveCompletionSignalSteps(panelMode) {
+  return panelMode === 'grok' ? GROK_STEP_COMPLETION_SIGNAL_STEPS : OPENAI_STEP_COMPLETION_SIGNAL_STEPS;
+}
+function getActiveBackgroundCompletedSteps(panelMode) {
+  return panelMode === 'grok' ? GROK_AUTO_RUN_BACKGROUND_COMPLETED_STEPS : OPENAI_AUTO_RUN_BACKGROUND_COMPLETED_STEPS;
+}
+function doesStepUseCompletionSignal(step, panelMode) {
+  return getActiveCompletionSignalSteps(panelMode || 'cpa').has(step);
+}
+function isStepBackgroundCompleted(step, panelMode) {
+  return getActiveBackgroundCompletedSteps(panelMode || 'cpa').has(step);
 }
 
 function notifyStepComplete(step, payload) {
@@ -5202,11 +5255,13 @@ async function completeStepFromBackground(step, payload = {}) {
     return;
   }
 
-  const completionState = step === LAST_STEP_ID ? await getState() : null;
+  const csState = await getState();
+  const activeLastStep = getActiveLastStepId(csState.panelMode || 'cpa');
+  const completionState = step === activeLastStep ? csState : null;
   await setStepStatus(step, 'completed');
   await addLog(`步骤 ${step} 已完成`, 'ok');
   await handleStepData(step, payload);
-  if (step === LAST_STEP_ID) {
+  if (step === activeLastStep) {
     await appendAndBroadcastAccountRunRecord('success', completionState);
   }
   notifyStepComplete(step, payload);
@@ -5471,6 +5526,11 @@ async function executeStep(step, options = {}) {
       await setState({ flowStartTime: Date.now() });
     }
 
+    // Rebuild registry if panel mode changed
+    if (typeof rebuildStepRegistryIfNeeded === 'function') {
+      await rebuildStepRegistryIfNeeded();
+    }
+
     await stepRegistry.executeStep(step, state);
   } catch (err) {
     executionError = err;
@@ -5489,7 +5549,7 @@ async function executeStep(step, options = {}) {
       await handleBrowserSwitchRequired(err);
       throw new Error(STOP_ERROR_MESSAGE);
     }
-    if (!(deferRetryableTransportError && doesStepUseCompletionSignal(step) && isRetryableContentScriptTransportError(err))) {
+    if (!(deferRetryableTransportError && doesStepUseCompletionSignal(step, state.panelMode || 'cpa') && isRetryableContentScriptTransportError(err))) {
       await setStepStatus(step, 'failed');
       await addLog(`步骤 ${step} 失败：${err.message}`, 'error');
       await appendManualAccountRunRecordIfNeeded(`step${step}_failed`, state, getErrorMessage(err));
@@ -5522,12 +5582,13 @@ async function executeStepAndWait(step, delayAfter = 2000) {
     await sleepWithStop(delaySeconds * 1000);
   }
 
-  if (AUTO_RUN_BACKGROUND_COMPLETED_STEPS.has(step)) {
+  const panelMode = (await getState()).panelMode || 'cpa';
+  if (isStepBackgroundCompleted(step, panelMode)) {
     await addLog(`自动运行：步骤 ${step} 由后台流程负责收尾，执行函数返回后将直接进入下一步。`, 'info');
     await executeStep(step);
     const latestState = await getState();
     await addLog(`自动运行：步骤 ${step} 已执行返回，当前状态为 ${latestState.stepStatuses?.[step] || 'pending'}，准备继续后续步骤。`, 'info');
-  } else if (doesStepUseCompletionSignal(step)) {
+  } else if (doesStepUseCompletionSignal(step, panelMode)) {
     await addLog(`自动运行：步骤 ${step} 已发起，正在等待完成信号（超时 ${AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS / 1000} 秒）。`, 'info');
     await executeStepViaCompletionSignal(step, AUTO_RUN_SIGNAL_COMPLETION_TIMEOUT_MS);
     await addLog(`自动运行：步骤 ${step} 已收到完成信号，准备继续后续步骤。`, 'info');
@@ -6151,7 +6212,40 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
   return resumedState.email;
 }
 
+async function runGrokAutoSequenceFromStep(startStep, context = {}) {
+  const { targetRun, totalRuns, attemptRuns, continued = false } = context;
+
+  if (continued) {
+    await addLog(`=== Grok 目标 ${targetRun}/${totalRuns} 轮：继续当前进度，从步骤 ${startStep} 开始（第 ${attemptRuns} 次尝试）===`, 'info');
+  } else {
+    await addLog(`=== Grok 目标 ${targetRun}/${totalRuns} 轮：第 ${attemptRuns} 次尝试 ===`, 'info');
+  }
+
+  await broadcastAutoRunStatus('running', {
+    currentRun: targetRun,
+    totalRuns,
+    attemptRun: attemptRuns,
+  });
+
+  for (let step = startStep; step <= GROK_LAST_STEP_ID; step++) {
+    throwIfStopped();
+    try {
+      const delay = AUTO_STEP_DELAYS[step] !== undefined ? AUTO_STEP_DELAYS[step] : 2000;
+      await executeStepAndWait(step, delay);
+    } catch (err) {
+      if (isStopError(err)) {
+        throw err;
+      }
+      throw err;
+    }
+  }
+}
+
 async function runAutoSequenceFromStep(startStep, context = {}) {
+  const grokState = await getState();
+  if ((grokState.panelMode || 'cpa') === 'grok') {
+    return runGrokAutoSequenceFromStep(startStep, context);
+  }
   const { targetRun, totalRuns, attemptRuns, continued = false } = context;
   let postStep7RestartCount = 0;
   let step4RestartCount = 0;
@@ -6579,6 +6673,63 @@ const step10Executor = self.MultiPageBackgroundStep10?.createStep10Executor({
   shouldBypassStep9ForLocalCpa,
   SUB2API_STEP9_RESPONSE_TIMEOUT_MS,
 });
+// ============================================================
+// Grok Step Executors
+// ============================================================
+const grokTempMail = self.MultiPageBackgroundGrokTempMail?.createGrokTempMailHelpers({ addLog });
+const grokStep1Executor = self.MultiPageBackgroundGrokStep1?.createGrokStep1Executor({
+  addLog,
+  completeStepFromBackground,
+  reuseOrCreateTab,
+  registerTab,
+  sendToContentScriptResilient,
+  ensureContentScriptReadyOnTab,
+  chrome,
+});
+const grokStep2Executor = self.MultiPageBackgroundGrokStep2?.createGrokStep2Executor({
+  addLog,
+  completeStepFromBackground,
+  ensureContentScriptReadyOnTab,
+  getTabId,
+  isTabAlive,
+  sendToContentScriptResilient,
+  setState,
+  grokTempMail,
+  throwIfStopped,
+});
+const grokStep3Executor = self.MultiPageBackgroundGrokStep3?.createGrokStep3Executor({
+  addLog,
+  completeStepFromBackground,
+  ensureContentScriptReadyOnTab,
+  getTabId,
+  isTabAlive,
+  sendToContentScriptResilient,
+  grokTempMail,
+  throwIfStopped,
+});
+const grokStep4Executor = self.MultiPageBackgroundGrokStep4?.createGrokStep4Executor({
+  addLog,
+  completeStepFromBackground,
+  ensureContentScriptReadyOnTab,
+  getTabId,
+  isTabAlive,
+  sendToContentScriptResilient,
+  setState,
+  throwIfStopped,
+});
+const grokStep5Executor = self.MultiPageBackgroundGrokStep5?.createGrokStep5Executor({
+  addLog,
+  chrome,
+  completeStepFromBackground,
+  setState,
+  throwIfStopped,
+});
+const grokStep6Executor = self.MultiPageBackgroundGrokStep6?.createGrokStep6Executor({
+  addLog,
+  completeStepFromBackground,
+  getState,
+  throwIfStopped,
+});
 const stepDefinitions = SHARED_STEP_DEFINITIONS;
 const stepExecutorsByKey = {
   'open-chatgpt': () => step1Executor.executeStep1(),
@@ -6591,6 +6742,14 @@ const stepExecutorsByKey = {
   'fetch-login-code': (state) => step8Executor.executeStep8(state),
   'confirm-oauth': (state) => step9Executor.executeStep9(state),
   'platform-verify': (state) => executeStep10(state),
+};
+const grokStepExecutorsByKey = {
+  'grok-open-signup': () => grokStep1Executor.executeGrokStep1(),
+  'grok-submit-email': (state) => grokStep2Executor.executeGrokStep2(state),
+  'grok-verify-code': (state) => grokStep3Executor.executeGrokStep3(state),
+  'grok-fill-profile': (state) => grokStep4Executor.executeGrokStep4(state),
+  'grok-extract-sso': () => grokStep5Executor.executeGrokStep5(),
+  'grok-push-to-api': (state) => grokStep6Executor.executeGrokStep6(state),
 };
 const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter({
   addLog,
@@ -6694,12 +6853,30 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   upsertHotmailAccount,
   verifyHotmailAccount,
 });
-const stepRegistry = self.MultiPageBackgroundStepRegistry?.createStepRegistry(
-  stepDefinitions.map((definition) => ({
-    ...definition,
-    execute: stepExecutorsByKey[definition.key],
-  }))
-);
+
+function buildStepRegistryForMode(panelMode) {
+  const isGrok = panelMode === 'grok';
+  const activeDefinitions = isGrok ? GROK_STEP_DEFINITIONS : stepDefinitions;
+  const activeExecutors = isGrok ? grokStepExecutorsByKey : stepExecutorsByKey;
+  return self.MultiPageBackgroundStepRegistry?.createStepRegistry(
+    activeDefinitions.map((definition) => ({
+      ...definition,
+      execute: activeExecutors[definition.key],
+    }))
+  );
+}
+
+let stepRegistry = buildStepRegistryForMode('cpa');
+let currentRegistryMode = 'cpa';
+
+async function rebuildStepRegistryIfNeeded() {
+  const state = await getState();
+  const mode = state.panelMode || 'cpa';
+  if (mode !== currentRegistryMode) {
+    stepRegistry = buildStepRegistryForMode(mode);
+    currentRegistryMode = mode;
+  }
+}
 
 async function requestOAuthUrlFromPanel(state, options = {}) {
   return panelBridge.requestOAuthUrlFromPanel(state, options);
@@ -7148,7 +7325,12 @@ function isAddPhoneAuthState(authState = {}) {
 async function getPostStep6AutoRestartDecision(step, error) {
   const normalizedStep = Number(step);
   const errorMessage = getErrorMessage(error);
-  if (!Number.isFinite(normalizedStep) || normalizedStep < 7 || normalizedStep > LAST_STEP_ID) {
+  const state = await getState();
+  const mode = state.panelMode || 'cpa';
+  const activeLastStep = typeof getActiveLastStepId === 'function'
+    ? getActiveLastStepId(mode)
+    : LAST_STEP_ID;
+  if (mode === 'grok' || !Number.isFinite(normalizedStep) || normalizedStep < 7 || normalizedStep > activeLastStep) {
     return {
       shouldRestart: false,
       blockedByAddPhone: false,

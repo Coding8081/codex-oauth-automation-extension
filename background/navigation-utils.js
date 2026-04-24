@@ -46,6 +46,9 @@
       if (state.panelMode === 'codex2api') {
         return 'codex2api';
       }
+      if (state.panelMode === 'grok') {
+        return 'grok';
+      }
       return 'cpa';
     }
 
@@ -56,6 +59,9 @@
       }
       if (mode === 'codex2api') {
         return 'Codex2API';
+      }
+      if (mode === 'grok') {
+        return 'Grok';
       }
       return 'CPA';
     }
@@ -156,6 +162,8 @@
               || candidate.pathname === '/admin'
               || candidate.pathname === '/'
             );
+        case 'grok-signup-page':
+          return candidate.hostname === 'accounts.x.ai';
         default:
           return false;
       }

@@ -113,6 +113,7 @@
           <option value="cpa">CPA 面板</option>
           <option value="sub2api">SUB2API</option>
           <option value="codex2api">Codex2API</option>
+          <option value="grok">Grok 注册</option>
         </select>
       </div>
       <div id="contribution-mode-panel" class="contribution-mode-panel" hidden>
@@ -202,6 +203,31 @@
         <span class="data-label">管理密钥</span>
         <input type="password" id="input-codex2api-admin-key" class="data-input"
           placeholder="请输入 Codex2API Admin Secret" />
+      </div>
+      <div class="data-row" id="row-grok2api-endpoint" style="display:none;">
+        <span class="data-label">grok2api</span>
+        <input type="text" id="input-grok2api-endpoint" class="data-input"
+          placeholder="http://127.0.0.1:8000/v1/admin/tokens" />
+      </div>
+      <div class="data-row" id="row-grok2api-token" style="display:none;">
+        <span class="data-label">API Token</span>
+        <input type="password" id="input-grok2api-token" class="data-input"
+          placeholder="grok2api 管理 Token" />
+      </div>
+      <div class="data-row" id="row-grok-temp-mail-api" style="display:none;">
+        <span class="data-label">临时邮箱 API</span>
+        <input type="text" id="input-grok-temp-mail-api" class="data-input"
+          placeholder="https://mail-api.example.com" />
+      </div>
+      <div class="data-row" id="row-grok-temp-mail-password" style="display:none;">
+        <span class="data-label">邮箱 API 密钥</span>
+        <input type="password" id="input-grok-temp-mail-password" class="data-input"
+          placeholder="Admin Password" />
+      </div>
+      <div class="data-row" id="row-grok-temp-mail-domain" style="display:none;">
+        <span class="data-label">邮箱域名</span>
+        <input type="text" id="input-grok-temp-mail-domain" class="data-input"
+          placeholder="mail.example.com" />
       </div>
       <div class="data-row" id="row-custom-password">
         <span class="data-label">账户密码</span>
@@ -779,6 +805,7 @@
   <script src="../hotmail-utils.js"></script>
   <script src="../luckmail-utils.js"></script>
   <script src="../data/step-definitions.js"></script>
+  <script src="../data/grok-step-definitions.js"></script>
   <script src="update-service.js"></script>
   <script src="contribution-content-update-service.js"></script>
   <script src="account-pool-ui.js"></script>

@@ -115,6 +115,21 @@
         return;
       }
 
+      const state = await getState();
+      if ((state?.panelMode || 'cpa') === 'grok') {
+        const grokSignupTabId = typeof getTabId === 'function'
+          ? await getTabId('grok-signup-page')
+          : null;
+        const grokSignupTabAlive = grokSignupTabId && typeof isTabAlive === 'function'
+          ? await isTabAlive('grok-signup-page')
+          : Boolean(grokSignupTabId);
+
+        if (!grokSignupTabId || !grokSignupTabAlive) {
+          throw new Error('手动执行 Grok 步骤 4 前，请先执行步骤 1 或步骤 2，确保 x.ai 注册页仍然打开。');
+        }
+        return;
+      }
+
       const signupTabId = typeof getTabId === 'function'
         ? await getTabId('signup-page')
         : null;
@@ -264,7 +279,7 @@
             return { ok: true };
           }
           try {
-            if (message.step === 3 && typeof finalizeStep3Completion === 'function') {
+            if (message.step === 3 && typeof finalizeStep3Completion === 'function' && (await getState()).panelMode !== 'grok') {
               await finalizeStep3Completion(message.payload || {});
             }
           } catch (error) {
@@ -283,11 +298,13 @@
             return { ok: true, error: errorMessage };
           }
 
-          const completionState = message.step === 10 ? await getState() : null;
+          const scState = await getState();
+          const scIsLastStep = (scState.panelMode === 'grok') ? (message.step === 6) : (message.step === 10);
+          const completionState = scIsLastStep ? scState : null;
           await setStepStatus(message.step, 'completed');
           await addLog(`步骤 ${message.step} 已完成`, 'ok');
           await handleStepData(message.step, message.payload);
-          if (message.step === 10 && typeof appendAccountRunRecord === 'function') {
+          if (scIsLastStep && typeof appendAccountRunRecord === 'function') {
             await appendAccountRunRecord('success', completionState);
           }
           notifyStepComplete(message.step, message.payload);
@@ -436,7 +453,7 @@
             await setPersistentSettings({ emailPrefix: message.payload.emailPrefix });
             await setState({ emailPrefix: message.payload.emailPrefix });
           }
-          if (doesStepUseCompletionSignal(step)) {
+          if (doesStepUseCompletionSignal(step, (await getState()).panelMode || 'cpa')) {
             await executeStepViaCompletionSignal(step);
           } else {
             await executeStep(step);

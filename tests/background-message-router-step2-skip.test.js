@@ -253,3 +253,51 @@ test('message router blocks manual step 4 execution when signup page tab is miss
   assert.deepStrictEqual(events.invalidations, []);
   assert.deepStrictEqual(events.executedSteps, []);
 });
+
+test('message router allows grok manual step 4 when grok signup tab is alive', async () => {
+  const tabLookups = [];
+  const aliveLookups = [];
+  const { router, events } = createRouter({
+    state: { panelMode: 'grok', stepStatuses: { 1: 'completed', 2: 'completed', 3: 'completed' } },
+    getTabId: async (source) => {
+      tabLookups.push(source);
+      return source === 'grok-signup-page' ? 42 : null;
+    },
+    isTabAlive: async (source) => {
+      aliveLookups.push(source);
+      return source === 'grok-signup-page';
+    },
+  });
+
+  const response = await router.handleMessage({
+    type: 'EXECUTE_STEP',
+    source: 'sidepanel',
+    payload: { step: 4 },
+  }, {});
+
+  assert.deepStrictEqual(response, { ok: true });
+  assert.deepStrictEqual(tabLookups, ['grok-signup-page']);
+  assert.deepStrictEqual(aliveLookups, ['grok-signup-page']);
+  assert.deepStrictEqual(events.invalidations, [{ step: 4, options: { logLabel: '步骤 4 重新执行' } }]);
+  assert.deepStrictEqual(events.executedSteps, [4]);
+});
+
+test('message router blocks grok manual step 4 when grok signup tab is missing', async () => {
+  const { router, events } = createRouter({
+    state: { panelMode: 'grok', stepStatuses: { 1: 'completed', 2: 'completed', 3: 'completed' } },
+    getTabId: async () => null,
+    isTabAlive: async () => false,
+  });
+
+  await assert.rejects(
+    () => router.handleMessage({
+      type: 'EXECUTE_STEP',
+      source: 'sidepanel',
+      payload: { step: 4 },
+    }, {}),
+    /手动执行 Grok 步骤 4 前，请先执行步骤 1 或步骤 2/
+  );
+
+  assert.deepStrictEqual(events.invalidations, []);
+  assert.deepStrictEqual(events.executedSteps, []);
+});

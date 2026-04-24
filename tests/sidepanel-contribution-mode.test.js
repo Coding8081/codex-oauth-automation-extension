@@ -164,6 +164,16 @@ const inputAutoDelayMinutes = { value: '30' };
 const inputAutoStepDelaySeconds = { value: '10' };
 const inputVerificationResendCount = { value: '6' };
 const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
+const grokInputs = {
+  'input-grok2api-endpoint': { value: ' https://grok2api.example.com/v1/admin/tokens ' },
+  'input-grok2api-token': { value: 'grok-token' },
+  'input-grok-temp-mail-api': { value: ' https://mail-api.example.com/ ' },
+  'input-grok-temp-mail-password': { value: 'mail-secret' },
+  'input-grok-temp-mail-domain': { value: ' mail.example.com ' },
+};
+const document = {
+  getElementById(id) { return grokInputs[id] || null; },
+};
 
 function getCloudflareDomainsFromState() { return { domains: ['example.com'], activeDomain: 'example.com' }; }
 function normalizeCloudflareDomainValue(value) { return String(value || '').trim(); }
@@ -202,6 +212,11 @@ return {
   assert.equal(normalPayload.accountRunHistoryHelperBaseUrl, 'http://127.0.0.1:17373');
   assert.equal(normalPayload.codex2apiUrl, 'http://localhost:8080/admin/accounts');
   assert.equal(normalPayload.codex2apiAdminKey, 'codex-admin-secret');
+  assert.equal(normalPayload.grok2apiEndpoint, 'https://grok2api.example.com/v1/admin/tokens');
+  assert.equal(normalPayload.grok2apiToken, 'grok-token');
+  assert.equal(normalPayload.grokTempMailApi, 'https://mail-api.example.com/');
+  assert.equal(normalPayload.grokTempMailPassword, 'mail-secret');
+  assert.equal(normalPayload.grokTempMailDomain, 'mail.example.com');
   assert.equal(normalPayload.cloudflareTempEmailUseRandomSubdomain, true);
 });
 
